@@ -20,3 +20,4 @@ openai-whisper>=20231117  # install separately if needed: pip install openai-whi
 pyaudio>=0.2.14           # may need: sudo apt install portaudio19-dev
 sounddevice>=0.4.6
 soundfile>=0.12.1
+gunicorn>=22.0.0
