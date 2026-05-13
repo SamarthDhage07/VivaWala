@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VivaWala — Results</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/main.css" />
+  <link rel="stylesheet" href="/static/css/results.css" />
+</head>
+<body class="results-body">
+
+  <nav class="nav">
+    <div class="nav__brand">Viva<span>Wala</span></div>
+    <div class="nav__center">
+      <span class="tag" id="r-domain">—</span>
+      <span class="tag tag--dark" id="r-provider" style="display:none;">—</span>
+    </div>
+    <div class="nav__right">
+      <span style="font-size:0.78rem; color:var(--ink4);" id="r-date">—</span>
+      <a href="/" class="btn btn--ghost btn--sm">← Home</a>
+    </div>
+  </nav>
+
+  <!-- Loading -->
+  <div class="results-loading" id="results-loading">
+    <div class="spinner" style="width:36px;height:36px;"></div>
+    <div class="results-loading__label">Compiling your results…</div>
+  </div>
+
+  <!-- Main -->
+  <main class="results-main" id="results-main" style="display:none;">
+
+    <!-- Hero score -->
+    <div class="results-hero">
+      <div class="hero-grade-block">
+        <div class="hero-grade-letter" id="r-grade">—</div>
+        <div class="hero-grade-score"><span id="r-score">0</span>/10</div>
+        <div class="hero-grade-label">Final Score</div>
+      </div>
+      <div class="hero-sep"></div>
+      <div class="hero-stats">
+        <div>
+          <div class="hero-stat__val" id="r-questions">—</div>
+          <div class="hero-stat__label">Questions</div>
+        </div>
+        <div>
+          <div class="hero-stat__val" id="r-highest">—</div>
+          <div class="hero-stat__label">Highest</div>
+        </div>
+        <div>
+          <div class="hero-stat__val" id="r-trend">—</div>
+          <div class="hero-stat__label">Trend</div>
+        </div>
+        <div>
+          <div class="hero-stat__val" id="r-consistency">—</div>
+          <div class="hero-stat__label">Consistency</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard graph -->
+    <div class="r-section">
+      <div class="r-section__title">Performance Dashboard</div>
+      <div class="graph-card">
+        <img id="dashboard-img" src="" alt="Dashboard" class="graph-img" style="display:none;" />
+        <div class="graph-fallback" id="graph-fallback" style="display:none;">
+          Graph unavailable. Ensure Matplotlib is installed.
+        </div>
+      </div>
+    </div>
+
+    <!-- Score breakdown -->
+    <div class="r-section">
+      <div class="r-section__title">Score Breakdown</div>
+      <div class="timeline" id="scores-timeline"></div>
+    </div>
+
+    <!-- Coach summary -->
+    <div class="r-section">
+      <div class="r-section__title">Coach Summary</div>
+      <div class="summary-card" id="summary-card"></div>
+    </div>
+
+    <!-- Full transcript -->
+    <div class="r-section">
+      <div class="r-section__title">Full Transcript</div>
+      <div class="accordion" id="qa-accordion"></div>
+    </div>
+
+    <!-- Downloads -->
+    <div class="r-section">
+      <div class="r-section__title">Download Report</div>
+      <div class="downloads">
+        <button class="dl-btn" id="dl-json">{ } JSON</button>
+        <button class="dl-btn" id="dl-txt">📄 Transcript</button>
+        <button class="dl-btn" id="dl-report">📊 Report</button>
+        <a href="/" class="dl-btn dl-btn--dark">▶ New Interview</a>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    const SESSION_ID = window.location.pathname.split("/").pop();
+  </script>
+  <script src="/static/js/results.js"></script>
+</body>
+</html>

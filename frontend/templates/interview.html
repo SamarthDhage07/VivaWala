@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VivaWala — Interview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/main.css" />
+  <link rel="stylesheet" href="/static/css/interview.css" />
+</head>
+<body class="iv-body">
+
+  <!-- Minimal top bar -->
+  <header class="iv-header">
+    <a href="/" class="iv-brand">Viva<span>Wala</span></a>
+    <div class="iv-header__meta">
+      <span class="iv-meta-pill" id="domain-pill">—</span>
+      <span class="iv-meta-pill" id="provider-pill">—</span>
+      <span class="iv-meta-pill iv-meta-pill--progress" id="progress-pill">Q 0 / 0</span>
+    </div>
+    <button class="btn btn--dark btn--sm" id="btn-end" style="border-radius:var(--r-pill);">
+      End Session
+    </button>
+  </header>
+
+  <!-- Full-height page -->
+  <div class="iv-page">
+
+    <!-- Centered chat card (Cognito-style) -->
+    <div class="iv-card" id="iv-card">
+
+      <!-- Progress bar at top of card -->
+      <div class="iv-progress">
+        <div class="iv-progress__fill" id="progress-fill"></div>
+      </div>
+
+      <!-- Messages area -->
+      <div class="iv-messages" id="iv-messages"></div>
+
+      <!-- Bottom input bar -->
+      <div class="iv-input-bar" id="iv-input-bar">
+
+        <!-- Mic button -->
+        <button class="iv-mic" id="mic-btn" title="Click to record">
+          <svg id="mic-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </button>
+
+        <!-- Transcript / text area -->
+        <div class="iv-transcript" id="iv-transcript" contenteditable="false">
+          <span class="iv-transcript__placeholder" id="transcript-placeholder">
+            Click the mic and speak your answer…
+          </span>
+        </div>
+
+        <!-- Send button -->
+        <button class="iv-send" id="btn-submit" disabled title="Submit answer">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+
+      </div>
+
+      <!-- Status line below input bar -->
+      <div class="iv-status-line" id="iv-status-line">Ready</div>
+
+    </div>
+
+    <!-- Side evaluation panel (slides in after first answer) -->
+    <div class="iv-eval" id="iv-eval">
+      <div class="iv-eval__head">Evaluation</div>
+      <div class="iv-eval__body" id="iv-eval-body">
+
+        <!-- Await -->
+        <div class="iv-await" id="iv-await">
+          <div class="iv-await__icon">◎</div>
+          Answer a question to see your score here.
+        </div>
+
+        <!-- Score (hidden until first eval) -->
+        <div class="iv-score" id="iv-score" style="display:none;">
+          <div class="iv-score__num" id="score-num">—</div>
+          <div class="iv-score__denom">/10</div>
+          <div class="iv-score__bar">
+            <div class="iv-score__bar-fill" id="score-bar"></div>
+          </div>
+          <div class="iv-score__verdict" id="score-verdict"></div>
+        </div>
+
+        <div class="iv-eval-section" id="ev-feedback" style="display:none;">
+          <div class="iv-eval-label">Feedback</div>
+          <div class="iv-eval-text" id="feedback-text"></div>
+        </div>
+
+        <div class="iv-eval-section" id="ev-sw" style="display:none;">
+          <div class="iv-eval-label" style="color:var(--green);">Strengths</div>
+          <ul class="iv-sw-list" id="strengths-list"></ul>
+          <div class="iv-eval-label" style="color:var(--red); margin-top:0.75rem;">Weaknesses</div>
+          <ul class="iv-sw-list" id="weaknesses-list"></ul>
+        </div>
+
+        <div class="iv-hint" id="iv-hint" style="display:none;">
+          <div class="iv-hint__label">💡 Hint</div>
+          <div class="iv-hint__text" id="hint-text"></div>
+        </div>
+
+      </div>
+
+      <!-- Live stats -->
+      <div class="iv-eval__stats">
+        <div class="iv-stat">
+          <span class="iv-stat__label">Avg</span>
+          <span class="iv-stat__val" id="stat-avg">—</span>
+        </div>
+        <div class="iv-stat">
+          <span class="iv-stat__label">Done</span>
+          <span class="iv-stat__val" id="stat-q">0</span>
+        </div>
+        <div class="iv-stat">
+          <span class="iv-stat__label">Trend</span>
+          <span class="iv-stat__val" id="stat-trend">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Finish modal -->
+  <div class="modal-backdrop" id="finish-modal" style="display:none;">
+    <div class="modal">
+      <div class="modal__icon">🎯</div>
+      <h2 class="modal__title">Interview complete</h2>
+      <p class="modal__body">All questions answered. Generating your performance report…</p>
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/interview.js"></script>
+</body>
+</html>

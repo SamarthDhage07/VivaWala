@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VivaWala — AI Interview Prep</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/main.css" />
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="nav__brand">Viva<span>Wala</span></div>
+    <div class="nav__center">
+      <a href="#" class="nav__link">How it works</a>
+      <a href="#" class="nav__link">Domains</a>
+      <a href="/api/sessions" target="_blank" class="nav__link">History</a>
+    </div>
+    <div class="nav__right">
+      <div class="status-pill" id="status-pill">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-label">Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="page-home">
+
+    <!-- Hero -->
+    <div class="hero-section">
+      <div class="hero-left">
+        <div class="hero-eyebrow">
+          <span class="dot"></span>
+          AI Interview Prep · Available 24/7
+        </div>
+        <h1 class="hero-title">
+          Your next interview<br/>starts with one<br/>
+          <em>honest answer</em>
+        </h1>
+        <p class="hero-desc">
+          VivaWala is a private AI interview coach — ask questions,
+          evaluate your spoken answers, and give you real feedback,
+          completely on your terms.
+        </p>
+        <div class="hero-actions">
+          <button class="btn btn--dark btn--lg" id="btn-start-hero" disabled>
+            Begin interview →
+          </button>
+          <button class="btn btn--outline btn--lg" onclick="document.querySelector('.config-section').scrollIntoView({behavior:'smooth'})">
+            Configure
+          </button>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="hero-card">
+          <div class="hero-card__status">
+            <span class="status-dot status-dot--green"></span>
+            Ready to listen
+          </div>
+          <div class="hero-card__quote">
+            "Speak your answer out loud — I'll evaluate your clarity,
+            depth, and accuracy. No judgment, just honest feedback."
+          </div>
+          <div class="hero-card__tags">
+            <span class="tag">Python</span>
+            <span class="tag">System Design</span>
+            <span class="tag">HR</span>
+            <span class="tag">ML</span>
+            <span class="tag tag--dark">Private</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Config -->
+    <div class="config-section">
+      <div class="config-section__sep"></div>
+
+      <!-- Provider -->
+      <p class="section-h">AI Provider</p>
+      <div class="provider-grid">
+        <button class="provider-card active" id="card-groq" data-provider="groq">
+          <div class="provider-card__top">
+            <div class="provider-card__icon">⚡</div>
+            <span class="provider-card__name">Groq</span>
+            <span class="tag" id="groq-tag">Checking…</span>
+          </div>
+          <div class="provider-card__model" id="groq-model">llama-3.3-70b-versatile</div>
+          <div class="provider-card__desc">Cloud · Ultra-fast · Free tier</div>
+        </button>
+
+        <button class="provider-card" id="card-ollama" data-provider="ollama">
+          <div class="provider-card__top">
+            <div class="provider-card__icon">🦙</div>
+            <span class="provider-card__name">Ollama</span>
+            <span class="tag" id="ollama-tag">Checking…</span>
+          </div>
+          <div class="provider-card__model" id="ollama-model">llama3</div>
+          <div class="provider-card__desc">Local · 100% private · No API key</div>
+        </button>
+      </div>
+
+      <!-- Alert -->
+      <div class="alert alert--warn" id="provider-alert" style="display:none; margin-bottom:1.25rem;">
+        <span>⚠</span>
+        <span id="provider-alert-msg"></span>
+      </div>
+
+      <!-- Domain -->
+      <p class="section-h">Select Domain</p>
+      <div class="domain-grid" id="domain-grid"></div>
+
+      <!-- Custom domain -->
+      <div class="custom-domain-wrap" id="custom-domain-wrap" style="display:none;">
+        <div style="display:flex; flex-direction:column; gap:0.35rem;">
+          <label style="font-size:0.78rem; font-weight:500; color:var(--ink3);">Custom domain</label>
+          <input type="text" id="custom-domain-input" class="input"
+            placeholder="e.g. React Native, Kubernetes, Blockchain…" maxlength="80" />
+        </div>
+      </div>
+
+      <!-- Config bar -->
+      <div class="config-bar">
+        <div class="config-bar__item">
+          <div class="config-bar__label">Questions</div>
+          <div class="stepper">
+            <button class="stepper__btn" id="q-minus">−</button>
+            <div class="stepper__val" id="q-count">7</div>
+            <button class="stepper__btn" id="q-plus">+</button>
+          </div>
+        </div>
+        <div class="config-bar__sep"></div>
+        <div class="config-bar__item">
+          <div class="config-bar__label">Provider</div>
+          <span class="tag tag--dark" id="active-provider-tag">Groq ⚡</span>
+        </div>
+        <div class="config-bar__sep"></div>
+        <div class="config-bar__item">
+          <div class="config-bar__label">Input</div>
+          <span class="tag tag--green">🎤 Voice</span>
+        </div>
+        <div class="config-bar__spacer"></div>
+        <button class="btn btn--dark btn--lg" id="btn-start" disabled>
+          Begin interview →
+        </button>
+      </div>
+    </div>
+
+    <!-- Features -->
+    <div class="features-strip">
+      <div class="features-inner">
+        <div class="feature">
+          <div class="feature__label">01</div>
+          <div class="feature__title">Lightning fast</div>
+          <div class="feature__desc">Groq delivers 700+ tok/s — feedback arrives before you finish thinking</div>
+        </div>
+        <div class="feature">
+          <div class="feature__label">02</div>
+          <div class="feature__title">Voice first</div>
+          <div class="feature__desc">Speak naturally. Whisper transcribes your answers locally in real time</div>
+        </div>
+        <div class="feature">
+          <div class="feature__label">03</div>
+          <div class="feature__title">Deep analytics</div>
+          <div class="feature__desc">Score trends, strength patterns, and full performance dashboards</div>
+        </div>
+        <div class="feature">
+          <div class="feature__label">04</div>
+          <div class="feature__title">Fully private</div>
+          <div class="feature__desc">Switch to Ollama for zero-cloud, offline interviews on your machine</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/static/js/index.js"></script>
+</body>
+</html>
