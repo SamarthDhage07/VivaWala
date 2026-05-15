@@ -1,9 +1,10 @@
 /**
  * VivaWala — Interview Page
- * Cognito-style centered card chat with voice input.
+ * Uses Web Speech API (browser-native) for transcription.
+ * No audio upload to backend — works on Render / any cloud server.
  */
 
-const S = {
+var S = {
   sessionId:     sessionStorage.getItem("nh_session_id"),
   domain:        sessionStorage.getItem("nh_domain")          || "Unknown",
   provider:      sessionStorage.getItem("nh_provider")        || "groq",
@@ -12,86 +13,244 @@ const S = {
   currentQ:      1,
   scores:        [],
   isRecording:   false,
-  mediaRecorder: null,
-  audioChunks:   [],
-  audioCtx:      null,
-  analyser:      null,
-  animFrame:     null,
+  recognition:   null,   // Web Speech API SpeechRecognition
   transcript:    "",
+  interimText:   "",
 };
 
 if (!S.sessionId) { window.location.href = "/"; }
 
-const $  = id => document.getElementById(id);
-const messages   = $("iv-messages");
-const micBtn     = $("mic-btn");
-const transcript = $("iv-transcript");
-const placeholder= $("transcript-placeholder");
-const btnSubmit  = $("btn-submit");
-const statusLine = $("iv-status-line");
-const progressEl = $("progress-fill");
-const evalPanel  = $("iv-eval");
-const finishModal= $("finish-modal");
+function $(id) { return document.getElementById(id); }
 
-/* ── Boot ── */
-document.addEventListener("DOMContentLoaded", () => {
+var messages    = null;
+var micBtn      = null;
+var transcriptEl= null;
+var placeholder = null;
+var btnSubmit   = null;
+var statusLine  = null;
+var progressEl  = null;
+var evalPanel   = null;
+var finishModal = null;
+
+/* ══════════════════════════════
+   BOOT
+   ══════════════════════════════ */
+document.addEventListener("DOMContentLoaded", function() {
+  messages     = $("iv-messages");
+  micBtn       = $("mic-btn");
+  transcriptEl = $("iv-transcript");
+  placeholder  = $("transcript-placeholder");
+  btnSubmit    = $("btn-submit");
+  statusLine   = $("iv-status-line");
+  progressEl   = $("progress-fill");
+  evalPanel    = $("iv-eval");
+  finishModal  = $("finish-modal");
+
   // Header pills
   $("domain-pill").textContent   = S.domain;
-  $("progress-pill").textContent = `Q 1 / ${S.total}`;
-  const pp = $("provider-pill");
-  pp.textContent = S.provider === "groq" ? "⚡ Groq" : "🦙 Ollama";
+  $("progress-pill").textContent = "Q 1 / " + S.total;
+  var pp = $("provider-pill");
+  if (pp) pp.textContent = S.provider === "groq" ? "⚡ Groq" : "🦙 Ollama";
 
   // End session
-  $("btn-end").addEventListener("click", () => {
-    if (confirm("End session and go home?")) window.location.href = "/";
-  });
+  var endBtn = $("btn-end");
+  if (endBtn) {
+    endBtn.addEventListener("click", function() {
+      if (confirm("End session and go home?")) window.location.href = "/";
+    });
+  }
 
   micBtn.addEventListener("click", toggleRecording);
   btnSubmit.addEventListener("click", submitAnswer);
 
-  loadSessions();
+  // Check Web Speech API support
+  checkSpeechSupport();
 
-  // Open messages
-  setTimeout(() => {
+  // Welcome messages
+  setTimeout(function() {
     appendAI(
-      `Welcome. I'll be asking you ${S.total} questions on <strong>${S.domain}</strong>. ` +
-      `Click the mic button and speak your answer clearly.`,
+      "Welcome. I'll ask you " + S.total + " questions on <strong>" + S.domain + "</strong>. "
+      + "Click the mic button and speak your answer clearly.",
       false
     );
-    setTimeout(() => appendQuestion(S.firstQuestion, 1), 850);
-  }, 150);
+    setTimeout(function() {
+      appendQuestion(S.firstQuestion, 1);
+    }, 900);
+  }, 200);
 });
 
-/* ══════════════════
+/* ══════════════════════════════
+   WEB SPEECH API SETUP
+   ══════════════════════════════ */
+function checkSpeechSupport() {
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    setStatus("⚠ Your browser doesn't support voice input. Use Chrome or Edge.");
+    micBtn.disabled = true;
+    micBtn.title    = "Voice not supported — use Chrome or Edge";
+    return;
+  }
+  setStatus("Ready");
+}
+
+function createRecognition() {
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  var r = new SpeechRecognition();
+  r.continuous      = true;   // keep listening until stopped
+  r.interimResults  = true;   // show live partial results
+  r.lang            = "en-US";
+  r.maxAlternatives = 1;
+
+  r.onstart = function() {
+    S.isRecording = true;
+    micBtn.classList.add("is-recording");
+    if (placeholder) placeholder.style.display = "none";
+    transcriptEl.textContent = "";
+    btnSubmit.disabled = true;
+    setStatus("Listening… click mic to stop");
+    pulseStatus();
+  };
+
+  r.onresult = function(e) {
+    var finalText   = "";
+    var interimText = "";
+
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      var t = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        finalText += t + " ";
+      } else {
+        interimText += t;
+      }
+    }
+
+    if (finalText) {
+      S.transcript += finalText;
+    }
+
+    // Show combined final + interim live
+    var display = S.transcript + interimText;
+    transcriptEl.textContent = display.trim();
+
+    if (S.transcript.trim()) {
+      btnSubmit.disabled = false;
+    }
+  };
+
+  r.onerror = function(e) {
+    var msg = e.error;
+    if (msg === "not-allowed") {
+      setStatus("Microphone access denied — allow mic in browser settings");
+    } else if (msg === "no-speech") {
+      setStatus("No speech detected — try speaking again");
+    } else if (msg === "network") {
+      setStatus("Network error — check your connection");
+    } else {
+      setStatus("Error: " + msg);
+    }
+    stopRecognition();
+  };
+
+  r.onend = function() {
+    // Auto-stop when recognition ends
+    if (S.isRecording) {
+      stopRecognition();
+    }
+  };
+
+  return r;
+}
+
+/* ══════════════════════════════
+   RECORDING CONTROLS
+   ══════════════════════════════ */
+function toggleRecording() {
+  if (S.isRecording) {
+    stopRecognition();
+  } else {
+    startRecognition();
+  }
+}
+
+function startRecognition() {
+  // Clear previous transcript
+  S.transcript  = "";
+  S.interimText = "";
+  if (transcriptEl) transcriptEl.textContent = "";
+  if (placeholder)  placeholder.style.display = "none";
+  btnSubmit.disabled = true;
+
+  S.recognition = createRecognition();
+  if (!S.recognition) {
+    setStatus("Voice input not supported. Use Chrome or Edge.");
+    return;
+  }
+
+  try {
+    S.recognition.start();
+  } catch(e) {
+    setStatus("Could not start microphone: " + e.message);
+  }
+}
+
+function stopRecognition() {
+  S.isRecording = false;
+  micBtn.classList.remove("is-recording");
+
+  if (S.recognition) {
+    try { S.recognition.stop(); } catch(e) {}
+    S.recognition = null;
+  }
+
+  var finalText = S.transcript.trim();
+  if (finalText) {
+    transcriptEl.textContent = finalText;
+    btnSubmit.disabled = false;
+    setStatus("Ready — click send or re-record");
+  } else {
+    if (placeholder) placeholder.style.display = "inline";
+    transcriptEl.textContent = "";
+    setStatus("Nothing captured — try again");
+  }
+}
+
+/* ══════════════════════════════
    CHAT HELPERS
-   ══════════════════ */
-function appendAI(html, withTyping = true) {
-  if (!withTyping) { addBubble("ai", html); return; }
-  const typing = typingBubble();
+   ══════════════════════════════ */
+function appendAI(html, withTyping) {
+  if (withTyping === false) { addBubble("ai", html); return; }
+  var typing = typingBubble();
   messages.appendChild(typing);
   scrollBottom();
-  setTimeout(() => { typing.remove(); addBubble("ai", html); }, 650 + Math.random() * 250);
+  setTimeout(function() {
+    typing.remove();
+    addBubble("ai", html);
+  }, 650 + Math.random() * 250);
 }
 
 function appendQuestion(q, num) {
-  const typing = typingBubble();
+  var typing = typingBubble();
   messages.appendChild(typing);
   scrollBottom();
-  setTimeout(() => {
+  setTimeout(function() {
     typing.remove();
     addBubble("ai",
-      `<div class="iv-bubble__qnum">Question ${num} of ${S.total}</div>${esc(q)}`
+      '<div class="iv-bubble__qnum">Question ' + num + ' of ' + S.total + '</div>'
+      + esc(q)
     );
-  }, 480 + Math.random() * 200);
+  }, 500 + Math.random() * 200);
 }
 
 function appendUser(text) { addBubble("user", esc(text)); }
 
 function addBubble(role, html) {
-  const row = document.createElement("div");
-  row.className = `iv-msg iv-msg--${role}`;
-  const bub = document.createElement("div");
-  bub.className = `iv-bubble iv-bubble--${role}`;
+  var row = document.createElement("div");
+  row.className = "iv-msg iv-msg--" + role;
+  row.style.animation = "msgIn 0.22s ease forwards";
+  var bub = document.createElement("div");
+  bub.className = "iv-bubble iv-bubble--" + role;
   bub.innerHTML = html;
   row.appendChild(bub);
   messages.appendChild(row);
@@ -99,21 +258,19 @@ function addBubble(role, html) {
 }
 
 function typingBubble() {
-  const row = document.createElement("div");
+  var row = document.createElement("div");
   row.className = "iv-msg iv-msg--ai";
-  row.innerHTML = `
-    <div class="iv-bubble iv-bubble--ai">
-      <div class="iv-typing">
-        <div class="iv-dot"></div>
-        <div class="iv-dot"></div>
-        <div class="iv-dot"></div>
-      </div>
-    </div>`;
+  row.innerHTML = '<div class="iv-bubble iv-bubble--ai">'
+    + '<div class="iv-typing">'
+    + '<div class="iv-dot"></div>'
+    + '<div class="iv-dot"></div>'
+    + '<div class="iv-dot"></div>'
+    + '</div></div>';
   return row;
 }
 
 function scrollBottom() {
-  messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
+  if (messages) messages.scrollTo({ top: messages.scrollHeight, behavior: "smooth" });
 }
 
 function esc(s) {
@@ -122,125 +279,47 @@ function esc(s) {
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-/* ══════════════════
-   VOICE RECORDING
-   ══════════════════ */
-async function toggleRecording() {
-  S.isRecording ? stopRecording() : await startRecording();
-}
-
-async function startRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    S.audioChunks = [];
-
-    S.audioCtx  = new AudioContext();
-    S.analyser  = S.audioCtx.createAnalyser();
-    S.analyser.fftSize = 256;
-    S.audioCtx.createMediaStreamSource(stream).connect(S.analyser);
-
-    const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus" : "audio/webm";
-    S.mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
-    S.mediaRecorder.addEventListener("dataavailable", e => {
-      if (e.data.size > 0) S.audioChunks.push(e.data);
-    });
-    S.mediaRecorder.addEventListener("stop", onStop);
-    S.mediaRecorder.start(100);
-
-    S.isRecording = true;
-    micBtn.classList.add("is-recording");
-    btnSubmit.disabled = true;
-
-    // Clear transcript
-    S.transcript = "";
-    if (placeholder) placeholder.style.display = "none";
-    transcript.textContent = "";
-
-    setStatus("Recording… click mic to stop");
-    pulseStatus();
-  } catch {
-    setStatus("Microphone access denied");
-  }
-}
-
-function stopRecording() {
-  if (!S.mediaRecorder) return;
-  S.mediaRecorder.stop();
-  S.mediaRecorder.stream.getTracks().forEach(t => t.stop());
-  S.isRecording = false;
-  micBtn.classList.remove("is-recording");
-  setStatus("Converting speech to text…");
-}
-
-async function onStop() {
-  if (S.audioCtx) { await S.audioCtx.close(); S.audioCtx = null; }
-  if (!S.audioChunks.length) { setStatus("No audio captured"); return; }
-
-  const blob = new Blob(S.audioChunks, { type: "audio/webm" });
-  const b64  = await toBase64(blob);
-
-  try {
-    const resp = await fetch("/api/transcribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio: b64, mime_type: "audio/webm" }),
-    });
-    const data = await resp.json();
-
-    if (data.text?.trim()) {
-      S.transcript = data.text.trim();
-      if (placeholder) placeholder.style.display = "none";
-      transcript.textContent = S.transcript;
-      btnSubmit.disabled = false;
-      setStatus("Ready — click send or re-record");
-    } else {
-      if (placeholder) placeholder.style.display = "inline";
-      transcript.textContent = "";
-      setStatus(data.error || "Could not hear you — try again");
-    }
-  } catch {
-    setStatus("Transcription failed — is the server running?");
-  }
-}
-
-/* ══════════════════
+/* ══════════════════════════════
    SUBMIT ANSWER
-   ══════════════════ */
-async function submitAnswer() {
-  const answer = S.transcript.trim();
+   ══════════════════════════════ */
+function submitAnswer() {
+  var answer = S.transcript.trim();
   if (!answer) return;
 
   appendUser(answer);
 
-  // Clear transcript area
+  // Clear transcript
   S.transcript = "";
-  transcript.textContent = "";
-  if (placeholder) { placeholder.style.display = "inline"; }
+  if (transcriptEl) transcriptEl.textContent = "";
+  if (placeholder)  { placeholder.style.display = "inline"; }
   btnSubmit.disabled = true;
   micBtn.disabled    = true;
   setStatus("Evaluating…");
 
-  try {
-    const resp = await fetch("/api/answer", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: S.sessionId, answer }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || "Evaluation failed");
+  fetch("/api/answer", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: S.sessionId, answer: answer }),
+  })
+  .then(function(r) {
+    return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+  })
+  .then(function(res) {
+    if (!res.ok) throw new Error(res.data.error || "Evaluation failed");
+    var data = res.data;
+    var ev   = data.evaluation;
 
-    const ev = data.evaluation;
     updateEvalPanel(ev);
     S.scores.push(ev.score);
     updateStats();
     updateProgress(data.question_number, S.total);
 
-    // Feedback bubble
     appendAI(
-      `<strong>${ev.score}/10</strong> — ${esc(ev.verdict)}<br/>` +
-      `<span style="color:var(--ink3);font-size:0.85em;">${esc(ev.feedback)}</span>` +
-      (ev.follow_up ? `<br/><em style="color:var(--ink4);font-size:0.82em;">↳ ${esc(ev.follow_up)}</em>` : ""),
+      "<strong>" + ev.score + "/10</strong> — " + esc(ev.verdict) + "<br/>"
+      + '<span style="color:var(--ink3);font-size:0.85em;">' + esc(ev.feedback) + "</span>"
+      + (ev.follow_up
+        ? '<br/><em style="color:var(--ink4);font-size:0.82em;">↳ ' + esc(ev.follow_up) + "</em>"
+        : ""),
       true
     );
 
@@ -251,121 +330,124 @@ async function submitAnswer() {
       setTimeout(finishUp, 1500);
     } else {
       S.currentQ = data.next_question_number;
-      $("progress-pill").textContent = `Q ${S.currentQ} / ${S.total}`;
+      $("progress-pill").textContent = "Q " + S.currentQ + " / " + S.total;
       setStatus("Ready");
-      setTimeout(() => appendQuestion(data.next_question, S.currentQ), 1200);
+      setTimeout(function() {
+        appendQuestion(data.next_question, S.currentQ);
+      }, 1200);
     }
-  } catch (err) {
+  })
+  .catch(function(err) {
     micBtn.disabled = false;
-    setStatus(`Error: ${err.message}`);
-    appendAI(`⚠ ${err.message}`, false);
-  }
+    setStatus("Error: " + err.message);
+    appendAI("⚠ " + err.message, false);
+  });
 }
 
-/* ══════════════════
+/* ══════════════════════════════
    FINISH
-   ══════════════════ */
-async function finishUp() {
-  finishModal.style.display = "flex";
-  try {
-    const resp = await fetch("/api/finish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: S.sessionId }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
-    window.location.href = `/results/${S.sessionId}`;
-  } catch (err) {
-    finishModal.style.display = "none";
-    appendAI(`⚠ Could not generate report: ${err.message}`, false);
-  }
+   ══════════════════════════════ */
+function finishUp() {
+  if (finishModal) finishModal.style.display = "flex";
+  fetch("/api/finish", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: S.sessionId }),
+  })
+  .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+  .then(function(res) {
+    if (!res.ok) throw new Error(res.data.error);
+    window.location.href = "/results/" + S.sessionId;
+  })
+  .catch(function(err) {
+    if (finishModal) finishModal.style.display = "none";
+    appendAI("⚠ Could not generate report: " + err.message, false);
+  });
 }
 
-/* ══════════════════
+/* ══════════════════════════════
    EVAL PANEL
-   ══════════════════ */
+   ══════════════════════════════ */
 function updateEvalPanel(ev) {
-  const score = ev.score ?? 0;
+  var score = ev.score || 0;
 
-  // Show panel
-  evalPanel.classList.add("visible");
-  $("iv-await").style.display = "none";
-  $("iv-score").style.display = "block";
+  if (evalPanel) evalPanel.classList.add("visible");
+  var awaitEl = $("iv-await");
+  var scoreEl = $("iv-score");
+  if (awaitEl) awaitEl.style.display = "none";
+  if (scoreEl) scoreEl.style.display = "block";
 
-  $("score-num").textContent   = score;
-  $("score-bar").style.width   = `${score * 10}%`;
-  $("score-verdict").textContent = ev.verdict || "";
+  var numEl = $("score-num");
+  var barEl = $("score-bar");
+  var vrdEl = $("score-verdict");
+  if (numEl) numEl.textContent  = score;
+  if (barEl) barEl.style.width  = (score * 10) + "%";
+  if (vrdEl) vrdEl.textContent  = ev.verdict || "";
 
-  // Feedback
-  $("ev-feedback").style.display = "flex";
-  $("feedback-text").textContent  = ev.feedback || "";
+  var fbSec = $("ev-feedback");
+  var fbTxt = $("feedback-text");
+  if (fbSec) fbSec.style.display = "flex";
+  if (fbTxt) fbTxt.textContent   = ev.feedback || "";
 
-  // S&W
-  const s = ev.strengths  || [];
-  const w = ev.weaknesses || [];
+  var s = ev.strengths  || [];
+  var w = ev.weaknesses || [];
   if (s.length || w.length) {
-    $("ev-sw").style.display  = "flex";
-    $("strengths-list").innerHTML  = s.map(x => `<li class="strength">${esc(x)}</li>`).join("");
-    $("weaknesses-list").innerHTML = w.map(x => `<li class="weakness">${esc(x)}</li>`).join("");
+    var swSec = $("ev-sw");
+    var slEl  = $("strengths-list");
+    var wlEl  = $("weaknesses-list");
+    if (swSec) swSec.style.display = "flex";
+    if (slEl)  slEl.innerHTML  = s.map(function(x) { return '<li class="strength">' + esc(x) + "</li>"; }).join("");
+    if (wlEl)  wlEl.innerHTML  = w.map(function(x) { return '<li class="weakness">' + esc(x) + "</li>"; }).join("");
   }
 
-  // Hint
   if (ev.ideal_answer_hints) {
-    $("iv-hint").style.display = "block";
-    $("hint-text").textContent  = ev.ideal_answer_hints;
+    var hintBox = $("iv-hint");
+    var hintTxt = $("hint-text");
+    if (hintBox) hintBox.style.display = "block";
+    if (hintTxt) hintTxt.textContent   = ev.ideal_answer_hints;
   }
 }
 
 function updateStats() {
-  const avg = S.scores.reduce((a, b) => a + b, 0) / S.scores.length;
-  $("stat-avg").textContent = avg.toFixed(1);
-  $("stat-q").textContent   = S.scores.length;
-  if (S.scores.length >= 2) {
-    const d = S.scores[S.scores.length - 1] - S.scores[S.scores.length - 2];
-    $("stat-trend").textContent = d > 0 ? "↑" : d < 0 ? "↓" : "→";
+  var scores = S.scores;
+  var avg    = scores.reduce(function(a, b) { return a + b; }, 0) / scores.length;
+  var avgEl  = $("stat-avg");
+  var qEl    = $("stat-q");
+  var trEl   = $("stat-trend");
+  if (avgEl) avgEl.textContent = avg.toFixed(1);
+  if (qEl)   qEl.textContent   = scores.length;
+  if (trEl && scores.length >= 2) {
+    var d = scores[scores.length - 1] - scores[scores.length - 2];
+    trEl.textContent = d > 0 ? "↑" : d < 0 ? "↓" : "→";
   }
 }
 
 function updateProgress(current, total) {
-  if (progressEl) progressEl.style.width = `${(current / total) * 100}%`;
+  if (progressEl) progressEl.style.width = ((current / total) * 100) + "%";
 }
 
-/* ══════════════════
+/* ══════════════════════════════
    STATUS LINE
-   ══════════════════ */
+   ══════════════════════════════ */
 function setStatus(text) {
-  statusLine.textContent = text;
-  statusLine.style.opacity = "1";
+  if (statusLine) {
+    statusLine.textContent = text;
+    statusLine.style.opacity = "1";
+  }
 }
+
+var pulseInterval = null;
 function pulseStatus() {
-  let t = 0;
-  const dots = ["Recording ·", "Recording ··", "Recording ···"];
-  const id = setInterval(() => {
-    if (!S.isRecording) { clearInterval(id); return; }
-    statusLine.textContent = dots[t++ % 3];
-  }, 450);
+  if (pulseInterval) clearInterval(pulseInterval);
+  var dots = ["Listening ·", "Listening ··", "Listening ···"];
+  var i = 0;
+  pulseInterval = setInterval(function() {
+    if (!S.isRecording) { clearInterval(pulseInterval); return; }
+    setStatus(dots[i++ % 3]);
+  }, 500);
 }
 
-/* ══════════════════
-   SIDEBAR
-   ══════════════════ */
-async function loadSessions() {
-  try {
-    const resp = await fetch("/api/sessions");
-    const list = await resp.json();
-    // no sidebar in this layout — sessions accessible from results
-  } catch {}
-}
-
-/* ══════════════════
-   UTILS
-   ══════════════════ */
-function toBase64(blob) {
-  return new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload  = () => res(r.result);
-    r.onerror = rej;
-    r.readAsDataURL(blob);
-  });
-}
+/* Fade-up animation */
+var style = document.createElement("style");
+style.textContent = "@keyframes msgIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }";
+document.head.appendChild(style);
