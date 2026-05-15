@@ -364,7 +364,7 @@ def api_download_report(session_id, file_type):
 # ─────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting NeuralHire on http://localhost:{port}")
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"Starting VivaWala on http://localhost:{port}")
     logger.info(f"Active LLM provider: {get_active_provider()}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=False)

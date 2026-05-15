@@ -1,23 +1,20 @@
 # NeuralHire — Python dependencies
 
-# ── Web framework ─────────────────────────────
+# VivaWala — Python dependencies
+
+# Web framework
 flask>=3.0.0
 flask-cors>=4.0.0
 python-dotenv>=1.0.0
 Werkzeug>=3.0.0
 
-# ── LLM providers ─────────────────────────────
-requests>=2.31.0        # Groq API + Ollama REST calls
-groq>=0.9.0             # Official Groq Python SDK (optional, we use requests directly)
+# LLM providers
+requests>=2.31.0
+groq>=0.9.0
 
-# ── Analytics & visualisation ─────────────────
+# Analytics & visualisation
 numpy>=1.26.0
 matplotlib>=3.8.0
 
-# ── Speech-to-text ────────────────────────────
+# Speech fallback (no system libs needed)
 SpeechRecognition>=3.10.0
-openai-whisper>=20231117  # install separately if needed: pip install openai-whisper
-pyaudio>=0.2.14           # may need: sudo apt install portaudio19-dev
-sounddevice>=0.4.6
-soundfile>=0.12.1
-gunicorn>=22.0.0
