@@ -1,18 +1,27 @@
 """
 Speech-to-Text Module
-Handles audio recording and transcription using Whisper + SpeechRecognition fallback.
+Handles audio transcription using SpeechRecognition first, with Whisper fallback.
 """
 
 import os
-import io
+import shutil
+import subprocess
 import logging
 import tempfile
 import base64
-import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# Try importing Whisper (optional, fall back to SpeechRecognition)
+# SpeechRecognition primary engine
+try:
+    import speech_recognition as sr
+
+    SR_AVAILABLE = True
+except ImportError:
+    SR_AVAILABLE = False
+    logger.warning("SpeechRecognition not available.")
+
+# Whisper fallback engine
 try:
     import whisper
 
@@ -28,56 +37,63 @@ try:
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
-    logger.warning("Whisper not available. Using SpeechRecognition fallback.")
-
-# SpeechRecognition fallback
-try:
-    import speech_recognition as sr
-
-    SR_AVAILABLE = True
-except ImportError:
-    SR_AVAILABLE = False
-    logger.warning("SpeechRecognition not available.")
+    logger.warning("Whisper not available.")
 
 
 def transcribe_audio_bytes(audio_bytes: bytes, mime_type: str = "audio/webm") -> dict:
     """
     Transcribe raw audio bytes.
     Returns dict with 'text' and 'engine' used.
-    Tries Whisper first, falls back to Google SpeechRecognition.
+    Tries Python SpeechRecognition first, then falls back to Whisper.
     """
     if not audio_bytes:
         return {"text": "", "engine": "none", "error": "Empty audio data"}
 
-    # Write to temp file
-    suffix = ".webm"
-    if "wav" in mime_type:
-        suffix = ".wav"
-    elif "ogg" in mime_type:
-        suffix = ".ogg"
-    elif "mp4" in mime_type:
-        suffix = ".mp4"
+    temp_paths = []
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=_suffix_for_mime_type(mime_type), delete=False) as tmp:
             tmp.write(audio_bytes)
             tmp_path = tmp.name
+            temp_paths.append(tmp_path)
+
+        errors = []
+
+        if SR_AVAILABLE:
+            result = _transcribe_sr(tmp_path, mime_type, temp_paths)
+            if not result.get("error"):
+                return result
+            errors.append(f"SpeechRecognition: {result.get('error')}")
 
         if WHISPER_AVAILABLE:
-            return _transcribe_whisper(tmp_path)
-        elif SR_AVAILABLE:
-            return _transcribe_sr(tmp_path)
-        else:
-            return {
-                "text": "",
-                "engine": "none",
-                "error": "No transcription engine available. Install whisper or SpeechRecognition.",
-            }
+            result = _transcribe_whisper(tmp_path)
+            if not result.get("error"):
+                return result
+            errors.append(f"Whisper: {result.get('error')}")
+
+        return {
+            "text": "",
+            "engine": "none",
+            "error": "; ".join(errors) or "No transcription engine available. Install SpeechRecognition or whisper.",
+        }
     finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        for path in temp_paths:
+            try:
+                os.unlink(path)
+            except Exception:
+                pass
+
+
+def _suffix_for_mime_type(mime_type: str) -> str:
+    """Return a useful file suffix for recorded browser audio."""
+    mime_type = (mime_type or "").lower()
+    if "wav" in mime_type:
+        return ".wav"
+    if "ogg" in mime_type:
+        return ".ogg"
+    if "mp4" in mime_type or "m4a" in mime_type:
+        return ".mp4"
+    return ".webm"
 
 
 def _transcribe_whisper(audio_path: str) -> dict:
@@ -88,34 +104,62 @@ def _transcribe_whisper(audio_path: str) -> dict:
         text = result.get("text", "").strip()
         return {"text": text, "engine": "whisper", "error": None}
     except Exception as e:
-        logger.warning(f"Whisper failed: {e}. Falling back to SpeechRecognition.")
-        if SR_AVAILABLE:
-            return _transcribe_sr(audio_path)
+        logger.warning(f"Whisper failed: {e}")
         return {"text": "", "engine": "whisper", "error": str(e)}
 
 
-def _transcribe_sr(audio_path: str) -> dict:
-    """Transcribe using Google SpeechRecognition API."""
+def _transcribe_sr(audio_path: str, mime_type: str, temp_paths: list[str]) -> dict:
+    """Transcribe using the Python SpeechRecognition package."""
     try:
+        sr_audio_path = _prepare_sr_audio_file(audio_path, mime_type, temp_paths)
         recognizer = sr.Recognizer()
-        with sr.AudioFile(audio_path) as source:
+        with sr.AudioFile(sr_audio_path) as source:
             audio = recognizer.record(source)
         text = recognizer.recognize_google(audio)
-        return {"text": text, "engine": "google_sr", "error": None}
+        return {"text": text, "engine": "speech_recognition", "error": None}
     except sr.UnknownValueError:
         return {
             "text": "",
-            "engine": "google_sr",
+            "engine": "speech_recognition",
             "error": "Could not understand audio",
         }
     except sr.RequestError as e:
         return {
             "text": "",
-            "engine": "google_sr",
+            "engine": "speech_recognition",
             "error": f"Google SR API error: {e}",
         }
     except Exception as e:
-        return {"text": "", "engine": "google_sr", "error": str(e)}
+        return {"text": "", "engine": "speech_recognition", "error": str(e)}
+
+
+def _prepare_sr_audio_file(audio_path: str, mime_type: str, temp_paths: list[str]) -> str:
+    """
+    SpeechRecognition can read WAV/AIFF/FLAC. If a client sends WebM or Ogg,
+    convert it to WAV before using sr.AudioFile.
+    """
+    if "wav" in (mime_type or "").lower():
+        return audio_path
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        raise RuntimeError("ffmpeg is required to convert browser audio for SpeechRecognition")
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        wav_path = tmp.name
+    temp_paths.append(wav_path)
+
+    cmd = [
+        ffmpeg_path,
+        "-y",
+        "-i", audio_path,
+        "-ac", "1",
+        "-ar", "16000",
+        "-f", "wav",
+        wav_path,
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    return wav_path
 
 
 def transcribe_base64_audio(b64_audio: str, mime_type: str = "audio/webm") -> dict:
@@ -137,8 +181,8 @@ def transcribe_base64_audio(b64_audio: str, mime_type: str = "audio/webm") -> di
 def get_available_engines() -> list[str]:
     """Return list of available STT engines."""
     engines = []
-    if WHISPER_AVAILABLE:
-        engines.append("whisper")
     if SR_AVAILABLE:
         engines.append("speech_recognition")
+    if WHISPER_AVAILABLE:
+        engines.append("whisper")
     return engines

@@ -8,7 +8,7 @@ A futuristic, fully local AI interview preparation platform. Speak your answers,
 
 | Feature | Details |
 |---|---|
-| 🎤 Voice Answering | Speak into your mic — Whisper transcribes in real time |
+| 🎤 Voice Answering | Speak into your mic — Python SpeechRecognition transcribes it |
 | 🤖 AI Evaluation | Local llama3 scores every answer with strengths & weaknesses |
 | 📊 Analytics | NumPy-powered scoring + Matplotlib performance dashboards |
 | 💾 Local Storage | All reports saved as JSON, TXT + PNG graphs |
@@ -23,15 +23,15 @@ A futuristic, fully local AI interview preparation platform. Speak your answers,
 - Python 3.11+
 - Flask 3.x + Flask-CORS
 - Ollama (llama3 local LLM)
-- OpenAI Whisper (local STT)
-- SpeechRecognition (fallback STT)
+- SpeechRecognition (primary STT)
+- OpenAI Whisper (fallback STT)
 - NumPy — score analytics
 - Matplotlib — graph generation
 
 **Frontend**
 - HTML5 / CSS3 / Vanilla JS
 - Web Audio API (live waveform)
-- MediaRecorder API (voice capture)
+- Web Audio API (WAV voice capture)
 - Orbitron + Space Mono fonts
 
 ---
@@ -49,7 +49,7 @@ ai_interview_bot/
 ├── backend/
 │   ├── __init__.py
 │   ├── ollama_client.py       # Ollama LLM integration
-│   ├── speech_module.py       # Whisper / SpeechRecognition STT
+│   ├── speech_module.py       # SpeechRecognition / Whisper STT
 │   ├── analytics.py           # NumPy analytics + Matplotlib graphs
 │   └── file_handler.py        # Save/load reports & sessions
 │
@@ -138,27 +138,17 @@ Open **http://localhost:5000** in your browser.
 
 ---
 
-## 🎤 How to Install Whisper
+## 🎤 Speech-to-Text Setup
 
-Whisper is the primary speech-to-text engine (most accurate):
+SpeechRecognition is the primary speech-to-text engine. The browser records WAV audio and sends it to Python, so Brave does not need Chrome's Web Speech API or any Chrome extension.
 
 ```bash
-pip install openai-whisper
-
-# Also needs ffmpeg:
-# macOS:
-brew install ffmpeg
-
-# Ubuntu/Debian:
-sudo apt install ffmpeg
-
-# Windows:
-# Download from https://ffmpeg.org/download.html
+pip install SpeechRecognition
 ```
 
 The browser only records audio. Transcription happens in Python through `/api/transcribe`, so the app does not use Chrome's Web Speech API or any Chrome extension for voice recognition.
 
-If Whisper fails at runtime, the system automatically falls back to Google SpeechRecognition (requires internet).
+Whisper remains available as a fallback if SpeechRecognition cannot transcribe the audio.
 
 ---
 
@@ -173,7 +163,7 @@ If Whisper fails at runtime, the system automatically falls back to Google Speec
 6. Click the 🎤 microphone button
 7. Speak your answer clearly
 8. Click ⏹ to stop recording
-9. Whisper converts speech → text
+9. Python SpeechRecognition converts speech → text
 10. Click "SUBMIT ANSWER"
 11. llama3 evaluates your answer → score + feedback
 12. Repeat for all questions
@@ -228,7 +218,7 @@ Edit `.env` to customize:
 
 ```env
 OLLAMA_MODEL=llama3          # Change to llama3:70b for better quality
-WHISPER_MODEL=base           # tiny | base | small | medium | large
+WHISPER_MODEL=base           # fallback only: tiny | base | small | medium | large
 DEFAULT_NUM_QUESTIONS=7
 PORT=5000
 DEBUG=true
@@ -247,8 +237,8 @@ DEBUG=true
 **"Microphone access denied"**
 → Allow microphone in browser settings (click lock icon in URL bar)
 
-**Whisper is slow**
-→ Switch to `WHISPER_MODEL=tiny` in `.env` for faster (less accurate) transcription
+**Speech recognition fails**
+→ Make sure `SpeechRecognition` is installed in `.venv` and Brave has microphone permission
 
 **No audio on Linux**
 → `sudo apt install portaudio19-dev python3-pyaudio`
@@ -274,6 +264,7 @@ DEBUG=true
 ## 🙏 Credits
 
 - [Ollama](https://ollama.com) — Local LLM runtime
-- [OpenAI Whisper](https://github.com/openai/whisper) — Speech recognition
+- [SpeechRecognition](https://pypi.org/project/SpeechRecognition/) — Primary speech recognition library
+- [OpenAI Whisper](https://github.com/openai/whisper) — Fallback speech recognition
 - [Meta llama3](https://llama.meta.com) — Language model
 - Fonts: Orbitron, Space Mono (Google Fonts)

@@ -12,10 +12,12 @@ var S = {
   currentQ:      1,
   scores:        [],
   isRecording:   false,
-  mediaRecorder: null,
+  audioContext:  null,
   audioStream:   null,
-  audioChunks:   [],
-  mimeType:      "",
+  sourceNode:    null,
+  processorNode: null,
+  audioSamples:  [],
+  sampleRate:    0,
   transcript:    "",
 };
 
@@ -73,28 +75,14 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 function checkRecordingSupport() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+  var AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !AudioContext) {
     setStatus("Voice recording is not supported in this browser.");
     micBtn.disabled = true;
     micBtn.title = "Voice recording not supported";
     return;
   }
-  setStatus("Ready");
-}
-
-function preferredAudioMimeType() {
-  var types = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-    "audio/ogg",
-    "audio/mp4"
-  ];
-
-  for (var i = 0; i < types.length; i++) {
-    if (MediaRecorder.isTypeSupported(types[i])) return types[i];
-  }
-  return "";
+  setStatus("Ready - Python STT");
 }
 
 function toggleRecording() {
@@ -107,28 +95,33 @@ function toggleRecording() {
 
 function startRecording() {
   S.transcript = "";
-  S.audioChunks = [];
+  S.audioSamples = [];
+  S.sampleRate = 0;
   if (transcriptEl) transcriptEl.textContent = "";
   if (placeholder) placeholder.style.display = "none";
   btnSubmit.disabled = true;
 
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then(function(stream) {
+      var AudioContext = window.AudioContext || window.webkitAudioContext;
       S.audioStream = stream;
-      S.mimeType = preferredAudioMimeType();
+      S.audioContext = new AudioContext();
+      S.sampleRate = S.audioContext.sampleRate;
+      S.sourceNode = S.audioContext.createMediaStreamSource(stream);
+      S.processorNode = S.audioContext.createScriptProcessor(4096, 1, 1);
 
-      var opts = S.mimeType ? { mimeType: S.mimeType } : {};
-      S.mediaRecorder = new MediaRecorder(stream, opts);
-
-      S.mediaRecorder.ondataavailable = function(e) {
-        if (e.data && e.data.size > 0) S.audioChunks.push(e.data);
+      S.processorNode.onaudioprocess = function(e) {
+        if (!S.isRecording) return;
+        var input = e.inputBuffer.getChannelData(0);
+        S.audioSamples.push(new Float32Array(input));
       };
-      S.mediaRecorder.onstop = transcribeRecording;
 
-      S.mediaRecorder.start();
+      S.sourceNode.connect(S.processorNode);
+      S.processorNode.connect(S.audioContext.destination);
+
       S.isRecording = true;
       micBtn.classList.add("is-recording");
-      setStatus("Recording... click mic to stop");
+      setStatus("Recording audio for Python STT... click mic to stop");
       pulseStatus();
     })
     .catch(function(e) {
@@ -141,15 +134,23 @@ function stopRecording() {
   S.isRecording = false;
   micBtn.classList.remove("is-recording");
   btnSubmit.disabled = true;
-
-  if (S.mediaRecorder && S.mediaRecorder.state !== "inactive") {
-    S.mediaRecorder.stop();
-  } else {
-    transcribeRecording();
-  }
+  transcribeRecording();
 }
 
 function stopAudioStream() {
+  if (S.processorNode) {
+    try { S.processorNode.disconnect(); } catch(e) {}
+    S.processorNode.onaudioprocess = null;
+    S.processorNode = null;
+  }
+  if (S.sourceNode) {
+    try { S.sourceNode.disconnect(); } catch(e) {}
+    S.sourceNode = null;
+  }
+  if (S.audioContext) {
+    try { S.audioContext.close(); } catch(e) {}
+    S.audioContext = null;
+  }
   if (S.audioStream) {
     S.audioStream.getTracks().forEach(function(track) { track.stop(); });
     S.audioStream = null;
@@ -158,9 +159,8 @@ function stopAudioStream() {
 
 function transcribeRecording() {
   stopAudioStream();
-  S.mediaRecorder = null;
 
-  if (!S.audioChunks.length) {
+  if (!S.audioSamples.length) {
     if (placeholder) placeholder.style.display = "inline";
     transcriptEl.textContent = "";
     setStatus("Nothing recorded - try again");
@@ -170,8 +170,9 @@ function transcribeRecording() {
   setStatus("Transcribing with Python...");
   transcriptEl.textContent = "Transcribing...";
 
-  var blob = new Blob(S.audioChunks, { type: S.mimeType || "audio/webm" });
-  S.audioChunks = [];
+  var blob = encodeWav(S.audioSamples, S.sampleRate || 44100);
+  S.audioSamples = [];
+  S.sampleRate = 0;
 
   blobToBase64(blob)
     .then(function(audioBase64) {
@@ -180,7 +181,7 @@ function transcribeRecording() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           audio: audioBase64,
-          mime_type: blob.type || "audio/webm",
+          mime_type: "audio/wav",
         }),
       });
     })
@@ -210,6 +211,51 @@ function transcribeRecording() {
       transcriptEl.textContent = "";
       setStatus("Transcription error: " + err.message);
     });
+}
+
+function encodeWav(samples, sampleRate) {
+  var merged = mergeSamples(samples);
+  var buffer = new ArrayBuffer(44 + merged.length * 2);
+  var view = new DataView(buffer);
+
+  writeString(view, 0, "RIFF");
+  view.setUint32(4, 36 + merged.length * 2, true);
+  writeString(view, 8, "WAVE");
+  writeString(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(view, 36, "data");
+  view.setUint32(40, merged.length * 2, true);
+
+  var offset = 44;
+  for (var i = 0; i < merged.length; i++, offset += 2) {
+    var sample = Math.max(-1, Math.min(1, merged[i]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+
+  return new Blob([view], { type: "audio/wav" });
+}
+
+function mergeSamples(samples) {
+  var length = samples.reduce(function(total, chunk) { return total + chunk.length; }, 0);
+  var merged = new Float32Array(length);
+  var offset = 0;
+  samples.forEach(function(chunk) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return merged;
+}
+
+function writeString(view, offset, value) {
+  for (var i = 0; i < value.length; i++) {
+    view.setUint8(offset + i, value.charCodeAt(i));
+  }
 }
 
 function blobToBase64(blob) {
@@ -329,7 +375,7 @@ function submitAnswer() {
     } else {
       S.currentQ = data.next_question_number;
       $("progress-pill").textContent = "Q " + S.currentQ + " / " + S.total;
-      setStatus("Ready");
+      setStatus("Ready - Python STT");
       setTimeout(function() {
         appendQuestion(data.next_question, S.currentQ);
       }, 1200);
@@ -428,7 +474,7 @@ function setStatus(text) {
 var pulseInterval = null;
 function pulseStatus() {
   if (pulseInterval) clearInterval(pulseInterval);
-  var dots = ["Recording .", "Recording ..", "Recording ..."];
+  var dots = ["Recording for Python STT .", "Recording for Python STT ..", "Recording for Python STT ..."];
   var i = 0;
   pulseInterval = setInterval(function() {
     if (!S.isRecording) { clearInterval(pulseInterval); return; }
