@@ -1,7 +1,6 @@
 /**
- * VivaWala — Interview Page
- * Uses Web Speech API (browser-native) for transcription.
- * No audio upload to backend — works on Render / any cloud server.
+ * VivaWala - Interview Page
+ * Records microphone audio and sends it to the Python backend for STT.
  */
 
 var S = {
@@ -13,28 +12,27 @@ var S = {
   currentQ:      1,
   scores:        [],
   isRecording:   false,
-  recognition:   null,   // Web Speech API SpeechRecognition
+  mediaRecorder: null,
+  audioStream:   null,
+  audioChunks:   [],
+  mimeType:      "",
   transcript:    "",
-  interimText:   "",
 };
 
 if (!S.sessionId) { window.location.href = "/"; }
 
 function $(id) { return document.getElementById(id); }
 
-var messages    = null;
-var micBtn      = null;
-var transcriptEl= null;
-var placeholder = null;
-var btnSubmit   = null;
-var statusLine  = null;
-var progressEl  = null;
-var evalPanel   = null;
-var finishModal = null;
+var messages     = null;
+var micBtn       = null;
+var transcriptEl = null;
+var placeholder  = null;
+var btnSubmit    = null;
+var statusLine   = null;
+var progressEl   = null;
+var evalPanel    = null;
+var finishModal  = null;
 
-/* ══════════════════════════════
-   BOOT
-   ══════════════════════════════ */
 document.addEventListener("DOMContentLoaded", function() {
   messages     = $("iv-messages");
   micBtn       = $("mic-btn");
@@ -46,13 +44,11 @@ document.addEventListener("DOMContentLoaded", function() {
   evalPanel    = $("iv-eval");
   finishModal  = $("finish-modal");
 
-  // Header pills
   $("domain-pill").textContent   = S.domain;
   $("progress-pill").textContent = "Q 1 / " + S.total;
   var pp = $("provider-pill");
-  if (pp) pp.textContent = S.provider === "groq" ? "⚡ Groq" : "🦙 Ollama";
+  if (pp) pp.textContent = S.provider === "groq" ? "Groq" : "Ollama";
 
-  // End session
   var endBtn = $("btn-end");
   if (endBtn) {
     endBtn.addEventListener("click", function() {
@@ -62,11 +58,8 @@ document.addEventListener("DOMContentLoaded", function() {
 
   micBtn.addEventListener("click", toggleRecording);
   btnSubmit.addEventListener("click", submitAnswer);
+  checkRecordingSupport();
 
-  // Check Web Speech API support
-  checkSpeechSupport();
-
-  // Welcome messages
   setTimeout(function() {
     appendAI(
       "Welcome. I'll ask you " + S.total + " questions on <strong>" + S.domain + "</strong>. "
@@ -79,146 +72,155 @@ document.addEventListener("DOMContentLoaded", function() {
   }, 200);
 });
 
-/* ══════════════════════════════
-   WEB SPEECH API SETUP
-   ══════════════════════════════ */
-function checkSpeechSupport() {
-  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    setStatus("⚠ Your browser doesn't support voice input. Use Chrome or Edge.");
+function checkRecordingSupport() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    setStatus("Voice recording is not supported in this browser.");
     micBtn.disabled = true;
-    micBtn.title    = "Voice not supported — use Chrome or Edge";
+    micBtn.title = "Voice recording not supported";
     return;
   }
   setStatus("Ready");
 }
 
-function createRecognition() {
-  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) return null;
+function preferredAudioMimeType() {
+  var types = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4"
+  ];
 
-  var r = new SpeechRecognition();
-  r.continuous      = true;   // keep listening until stopped
-  r.interimResults  = true;   // show live partial results
-  r.lang            = "en-US";
-  r.maxAlternatives = 1;
-
-  r.onstart = function() {
-    S.isRecording = true;
-    micBtn.classList.add("is-recording");
-    if (placeholder) placeholder.style.display = "none";
-    transcriptEl.textContent = "";
-    btnSubmit.disabled = true;
-    setStatus("Listening… click mic to stop");
-    pulseStatus();
-  };
-
-  r.onresult = function(e) {
-    var finalText   = "";
-    var interimText = "";
-
-    for (var i = e.resultIndex; i < e.results.length; i++) {
-      var t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) {
-        finalText += t + " ";
-      } else {
-        interimText += t;
-      }
-    }
-
-    if (finalText) {
-      S.transcript += finalText;
-    }
-
-    // Show combined final + interim live
-    var display = S.transcript + interimText;
-    transcriptEl.textContent = display.trim();
-
-    if (S.transcript.trim()) {
-      btnSubmit.disabled = false;
-    }
-  };
-
-  r.onerror = function(e) {
-    var msg = e.error;
-    if (msg === "not-allowed") {
-      setStatus("Microphone access denied — allow mic in browser settings");
-    } else if (msg === "no-speech") {
-      setStatus("No speech detected — try speaking again");
-    } else if (msg === "network") {
-      setStatus("Network error — check your connection");
-    } else {
-      setStatus("Error: " + msg);
-    }
-    stopRecognition();
-  };
-
-  r.onend = function() {
-    // Auto-stop when recognition ends
-    if (S.isRecording) {
-      stopRecognition();
-    }
-  };
-
-  return r;
+  for (var i = 0; i < types.length; i++) {
+    if (MediaRecorder.isTypeSupported(types[i])) return types[i];
+  }
+  return "";
 }
 
-/* ══════════════════════════════
-   RECORDING CONTROLS
-   ══════════════════════════════ */
 function toggleRecording() {
   if (S.isRecording) {
-    stopRecognition();
+    stopRecording();
   } else {
-    startRecognition();
+    startRecording();
   }
 }
 
-function startRecognition() {
-  // Clear previous transcript
-  S.transcript  = "";
-  S.interimText = "";
+function startRecording() {
+  S.transcript = "";
+  S.audioChunks = [];
   if (transcriptEl) transcriptEl.textContent = "";
-  if (placeholder)  placeholder.style.display = "none";
+  if (placeholder) placeholder.style.display = "none";
   btnSubmit.disabled = true;
 
-  S.recognition = createRecognition();
-  if (!S.recognition) {
-    setStatus("Voice input not supported. Use Chrome or Edge.");
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(function(stream) {
+      S.audioStream = stream;
+      S.mimeType = preferredAudioMimeType();
+
+      var opts = S.mimeType ? { mimeType: S.mimeType } : {};
+      S.mediaRecorder = new MediaRecorder(stream, opts);
+
+      S.mediaRecorder.ondataavailable = function(e) {
+        if (e.data && e.data.size > 0) S.audioChunks.push(e.data);
+      };
+      S.mediaRecorder.onstop = transcribeRecording;
+
+      S.mediaRecorder.start();
+      S.isRecording = true;
+      micBtn.classList.add("is-recording");
+      setStatus("Recording... click mic to stop");
+      pulseStatus();
+    })
+    .catch(function(e) {
+      if (placeholder) placeholder.style.display = "inline";
+      setStatus("Microphone access denied or unavailable: " + e.message);
+    });
+}
+
+function stopRecording() {
+  S.isRecording = false;
+  micBtn.classList.remove("is-recording");
+  btnSubmit.disabled = true;
+
+  if (S.mediaRecorder && S.mediaRecorder.state !== "inactive") {
+    S.mediaRecorder.stop();
+  } else {
+    transcribeRecording();
+  }
+}
+
+function stopAudioStream() {
+  if (S.audioStream) {
+    S.audioStream.getTracks().forEach(function(track) { track.stop(); });
+    S.audioStream = null;
+  }
+}
+
+function transcribeRecording() {
+  stopAudioStream();
+  S.mediaRecorder = null;
+
+  if (!S.audioChunks.length) {
+    if (placeholder) placeholder.style.display = "inline";
+    transcriptEl.textContent = "";
+    setStatus("Nothing recorded - try again");
     return;
   }
 
-  try {
-    S.recognition.start();
-  } catch(e) {
-    setStatus("Could not start microphone: " + e.message);
-  }
+  setStatus("Transcribing with Python...");
+  transcriptEl.textContent = "Transcribing...";
+
+  var blob = new Blob(S.audioChunks, { type: S.mimeType || "audio/webm" });
+  S.audioChunks = [];
+
+  blobToBase64(blob)
+    .then(function(audioBase64) {
+      return fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audio: audioBase64,
+          mime_type: blob.type || "audio/webm",
+        }),
+      });
+    })
+    .then(function(r) {
+      return r.json().then(function(d) { return { ok: r.ok, data: d }; });
+    })
+    .then(function(res) {
+      if (!res.ok || res.data.error) {
+        throw new Error(res.data.error || "Transcription failed");
+      }
+
+      var finalText = (res.data.text || "").trim();
+      S.transcript = finalText;
+
+      if (finalText) {
+        transcriptEl.textContent = finalText;
+        btnSubmit.disabled = false;
+        setStatus("Ready - transcribed by " + (res.data.engine || "Python"));
+      } else {
+        if (placeholder) placeholder.style.display = "inline";
+        transcriptEl.textContent = "";
+        setStatus("No speech detected - try again");
+      }
+    })
+    .catch(function(err) {
+      if (placeholder) placeholder.style.display = "inline";
+      transcriptEl.textContent = "";
+      setStatus("Transcription error: " + err.message);
+    });
 }
 
-function stopRecognition() {
-  S.isRecording = false;
-  micBtn.classList.remove("is-recording");
-
-  if (S.recognition) {
-    try { S.recognition.stop(); } catch(e) {}
-    S.recognition = null;
-  }
-
-  var finalText = S.transcript.trim();
-  if (finalText) {
-    transcriptEl.textContent = finalText;
-    btnSubmit.disabled = false;
-    setStatus("Ready — click send or re-record");
-  } else {
-    if (placeholder) placeholder.style.display = "inline";
-    transcriptEl.textContent = "";
-    setStatus("Nothing captured — try again");
-  }
+function blobToBase64(blob) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onloadend = function() { resolve(reader.result); };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
-/* ══════════════════════════════
-   CHAT HELPERS
-   ══════════════════════════════ */
 function appendAI(html, withTyping) {
   if (withTyping === false) { addBubble("ai", html); return; }
   var typing = typingBubble();
@@ -275,29 +277,25 @@ function scrollBottom() {
 
 function esc(s) {
   return String(s || "")
-    .replace(/&/g,"&amp;").replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/* ══════════════════════════════
-   SUBMIT ANSWER
-   ══════════════════════════════ */
 function submitAnswer() {
   var answer = S.transcript.trim();
   if (!answer) return;
 
   appendUser(answer);
 
-  // Clear transcript
   S.transcript = "";
   if (transcriptEl) transcriptEl.textContent = "";
-  if (placeholder)  { placeholder.style.display = "inline"; }
+  if (placeholder) placeholder.style.display = "inline";
   btnSubmit.disabled = true;
-  micBtn.disabled    = true;
-  setStatus("Evaluating…");
+  micBtn.disabled = true;
+  setStatus("Evaluating...");
 
   fetch("/api/answer", {
-    method:  "POST",
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: S.sessionId, answer: answer }),
   })
@@ -307,7 +305,7 @@ function submitAnswer() {
   .then(function(res) {
     if (!res.ok) throw new Error(res.data.error || "Evaluation failed");
     var data = res.data;
-    var ev   = data.evaluation;
+    var ev = data.evaluation;
 
     updateEvalPanel(ev);
     S.scores.push(ev.score);
@@ -315,10 +313,10 @@ function submitAnswer() {
     updateProgress(data.question_number, S.total);
 
     appendAI(
-      "<strong>" + ev.score + "/10</strong> — " + esc(ev.verdict) + "<br/>"
+      "<strong>" + ev.score + "/10</strong> - " + esc(ev.verdict) + "<br/>"
       + '<span style="color:var(--ink3);font-size:0.85em;">' + esc(ev.feedback) + "</span>"
       + (ev.follow_up
-        ? '<br/><em style="color:var(--ink4);font-size:0.82em;">↳ ' + esc(ev.follow_up) + "</em>"
+        ? '<br/><em style="color:var(--ink4);font-size:0.82em;">Follow-up: ' + esc(ev.follow_up) + "</em>"
         : ""),
       true
     );
@@ -326,7 +324,7 @@ function submitAnswer() {
     micBtn.disabled = false;
 
     if (data.finished) {
-      setStatus("Interview complete — generating report…");
+      setStatus("Interview complete - generating report...");
       setTimeout(finishUp, 1500);
     } else {
       S.currentQ = data.next_question_number;
@@ -340,17 +338,14 @@ function submitAnswer() {
   .catch(function(err) {
     micBtn.disabled = false;
     setStatus("Error: " + err.message);
-    appendAI("⚠ " + err.message, false);
+    appendAI("Warning: " + err.message, false);
   });
 }
 
-/* ══════════════════════════════
-   FINISH
-   ══════════════════════════════ */
 function finishUp() {
   if (finishModal) finishModal.style.display = "flex";
   fetch("/api/finish", {
-    method:  "POST",
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: S.sessionId }),
   })
@@ -361,13 +356,10 @@ function finishUp() {
   })
   .catch(function(err) {
     if (finishModal) finishModal.style.display = "none";
-    appendAI("⚠ Could not generate report: " + err.message, false);
+    appendAI("Warning: Could not generate report: " + err.message, false);
   });
 }
 
-/* ══════════════════════════════
-   EVAL PANEL
-   ══════════════════════════════ */
 function updateEvalPanel(ev) {
   var score = ev.score || 0;
 
@@ -380,45 +372,45 @@ function updateEvalPanel(ev) {
   var numEl = $("score-num");
   var barEl = $("score-bar");
   var vrdEl = $("score-verdict");
-  if (numEl) numEl.textContent  = score;
-  if (barEl) barEl.style.width  = (score * 10) + "%";
-  if (vrdEl) vrdEl.textContent  = ev.verdict || "";
+  if (numEl) numEl.textContent = score;
+  if (barEl) barEl.style.width = (score * 10) + "%";
+  if (vrdEl) vrdEl.textContent = ev.verdict || "";
 
   var fbSec = $("ev-feedback");
   var fbTxt = $("feedback-text");
   if (fbSec) fbSec.style.display = "flex";
-  if (fbTxt) fbTxt.textContent   = ev.feedback || "";
+  if (fbTxt) fbTxt.textContent = ev.feedback || "";
 
-  var s = ev.strengths  || [];
+  var s = ev.strengths || [];
   var w = ev.weaknesses || [];
   if (s.length || w.length) {
     var swSec = $("ev-sw");
-    var slEl  = $("strengths-list");
-    var wlEl  = $("weaknesses-list");
+    var slEl = $("strengths-list");
+    var wlEl = $("weaknesses-list");
     if (swSec) swSec.style.display = "flex";
-    if (slEl)  slEl.innerHTML  = s.map(function(x) { return '<li class="strength">' + esc(x) + "</li>"; }).join("");
-    if (wlEl)  wlEl.innerHTML  = w.map(function(x) { return '<li class="weakness">' + esc(x) + "</li>"; }).join("");
+    if (slEl) slEl.innerHTML = s.map(function(x) { return '<li class="strength">' + esc(x) + "</li>"; }).join("");
+    if (wlEl) wlEl.innerHTML = w.map(function(x) { return '<li class="weakness">' + esc(x) + "</li>"; }).join("");
   }
 
   if (ev.ideal_answer_hints) {
     var hintBox = $("iv-hint");
     var hintTxt = $("hint-text");
     if (hintBox) hintBox.style.display = "block";
-    if (hintTxt) hintTxt.textContent   = ev.ideal_answer_hints;
+    if (hintTxt) hintTxt.textContent = ev.ideal_answer_hints;
   }
 }
 
 function updateStats() {
   var scores = S.scores;
-  var avg    = scores.reduce(function(a, b) { return a + b; }, 0) / scores.length;
-  var avgEl  = $("stat-avg");
-  var qEl    = $("stat-q");
-  var trEl   = $("stat-trend");
+  var avg = scores.reduce(function(a, b) { return a + b; }, 0) / scores.length;
+  var avgEl = $("stat-avg");
+  var qEl = $("stat-q");
+  var trEl = $("stat-trend");
   if (avgEl) avgEl.textContent = avg.toFixed(1);
-  if (qEl)   qEl.textContent   = scores.length;
+  if (qEl) qEl.textContent = scores.length;
   if (trEl && scores.length >= 2) {
     var d = scores[scores.length - 1] - scores[scores.length - 2];
-    trEl.textContent = d > 0 ? "↑" : d < 0 ? "↓" : "→";
+    trEl.textContent = d > 0 ? "up" : d < 0 ? "down" : "same";
   }
 }
 
@@ -426,9 +418,6 @@ function updateProgress(current, total) {
   if (progressEl) progressEl.style.width = ((current / total) * 100) + "%";
 }
 
-/* ══════════════════════════════
-   STATUS LINE
-   ══════════════════════════════ */
 function setStatus(text) {
   if (statusLine) {
     statusLine.textContent = text;
@@ -439,7 +428,7 @@ function setStatus(text) {
 var pulseInterval = null;
 function pulseStatus() {
   if (pulseInterval) clearInterval(pulseInterval);
-  var dots = ["Listening ·", "Listening ··", "Listening ···"];
+  var dots = ["Recording .", "Recording ..", "Recording ..."];
   var i = 0;
   pulseInterval = setInterval(function() {
     if (!S.isRecording) { clearInterval(pulseInterval); return; }
@@ -447,7 +436,6 @@ function pulseStatus() {
   }, 500);
 }
 
-/* Fade-up animation */
 var style = document.createElement("style");
 style.textContent = "@keyframes msgIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }";
 document.head.appendChild(style);

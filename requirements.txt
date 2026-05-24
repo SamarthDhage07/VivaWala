@@ -16,5 +16,6 @@ groq>=0.9.0
 numpy>=1.26.0
 matplotlib>=3.8.0
 
-# Speech fallback (no system libs needed)
+# Speech-to-text
+openai-whisper>=20231117
 SpeechRecognition>=3.10.0

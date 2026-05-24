@@ -127,9 +127,6 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Install Whisper (optional but recommended)
-pip install openai-whisper
-
 # Copy env file
 cp .env.example .env
 
@@ -159,7 +156,9 @@ sudo apt install ffmpeg
 # Download from https://ffmpeg.org/download.html
 ```
 
-If Whisper fails to install, the system automatically falls back to Google SpeechRecognition (requires internet).
+The browser only records audio. Transcription happens in Python through `/api/transcribe`, so the app does not use Chrome's Web Speech API or any Chrome extension for voice recognition.
+
+If Whisper fails at runtime, the system automatically falls back to Google SpeechRecognition (requires internet).
 
 ---
 
