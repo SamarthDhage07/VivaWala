@@ -22,34 +22,10 @@ let providerData     = {};
 document.addEventListener("DOMContentLoaded", () => {
   renderDomains();
   setupStepper();
-  setupProviders();
   document.getElementById("btn-start").addEventListener("click", start);
   document.getElementById("btn-start-hero").addEventListener("click", start);
   checkStatus();
 });
-
-/* ── Provider ── */
-function setupProviders() {
-  document.getElementById("card-groq").addEventListener("click",   () => pick("groq"));
-  document.getElementById("card-ollama").addEventListener("click", () => pick("ollama"));
-}
-
-function pick(name) {
-  selectedProvider = name;
-  document.getElementById("card-groq").classList.toggle("active",   name === "groq");
-  document.getElementById("card-ollama").classList.toggle("active", name === "ollama");
-
-  const t = document.getElementById("active-provider-tag");
-  t.textContent = name === "groq" ? "Groq ⚡" : "Ollama 🦙";
-
-  fetch("/api/provider", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider: name }),
-  }).catch(() => {});
-
-  updateBtn();
-}
 
 /* ── Domains ── */
 function renderDomains() {
@@ -97,7 +73,7 @@ function updateBtn() {
       const r = providerData.groq.reason || "";
       txt     = r.includes("GROQ_API_KEY")
         ? "Groq API key missing — add GROQ_API_KEY to your .env file and restart."
-        : "Groq is unreachable. Check your connection or switch to Ollama.";
+        : "Groq is unreachable. Check your connection.";
       blocked = true;
     }
     if (selectedProvider === "ollama" && providerData?.ollama?.running === false) {
@@ -124,29 +100,9 @@ async function checkStatus() {
     const active = data.active_provider || "groq";
 
     selectedProvider = active;
-    document.getElementById("card-groq").classList.toggle("active",   active === "groq");
-    document.getElementById("card-ollama").classList.toggle("active", active === "ollama");
-    document.getElementById("active-provider-tag").textContent = active === "groq" ? "Groq ⚡" : "Ollama 🦙";
-
-    if (groq.model)   document.getElementById("groq-model").textContent   = groq.model;
-    if (ollama.model) document.getElementById("ollama-model").textContent = ollama.model;
-
-    // Groq tag
-    const gt = document.getElementById("groq-tag");
-    if (groq.available) {
-      gt.textContent = "Online"; gt.className = "tag tag--green";
-    } else {
-      gt.textContent = (groq.reason||"").includes("GROQ_API_KEY") ? "Key missing" : "Offline";
-      gt.className   = "tag tag--amber";
-    }
-
-    // Ollama tag
-    const ot = document.getElementById("ollama-tag");
-    if (ollama.running) {
-      ot.textContent = ollama.model_available !== false ? "Online" : "No model";
-      ot.className   = ollama.model_available !== false ? "tag tag--green" : "tag tag--amber";
-    } else {
-      ot.textContent = "Offline"; ot.className = "tag";
+    const activeProviderTag = document.getElementById("active-provider-tag");
+    if (activeProviderTag) {
+      activeProviderTag.textContent = active === "groq" ? "Groq ⚡" : "Ollama 🦙";
     }
 
     // Status pill

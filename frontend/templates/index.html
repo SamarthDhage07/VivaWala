@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VivaWala — AI Interview Prep</title>
+  <title>VivaWala - AI Interview Prep</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,700;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/css/main.css" />
@@ -21,7 +21,7 @@
     <div class="nav__right">
       <div class="status-pill" id="status-pill">
         <span class="status-dot" id="status-dot"></span>
-        <span id="status-label">Connecting…</span>
+        <span id="status-label">Connecting...</span>
       </div>
     </div>
   </nav>
@@ -29,79 +29,47 @@
   <div class="page-home">
 
     <!-- Hero -->
-    <div class="hero-section">
-      <div class="hero-left">
+    <section class="hero-stage">
+      <button class="hero-arrow hero-arrow--left" type="button" aria-label="Previous section">‹</button>
+      <button class="hero-arrow hero-arrow--right" type="button" aria-label="Next section">›</button>
+
+      <div class="hero-content" id="hero-content">
         <div class="hero-eyebrow">
-          <span class="dot"></span>
-          AI Interview Prep · Available 24/7
+          VivaWala AI Interview Prep
         </div>
+
         <h1 class="hero-title">
-          Your next interview<br/>starts with one<br/>
-          <em>honest answer</em>
+          Practice interviews<br/>that feel alive
         </h1>
+
         <p class="hero-desc">
-          VivaWala is a private AI interview coach — ask questions,
-          evaluate your spoken answers, and give you real feedback,
-          completely on your terms.
+          VivaWala listens to your spoken answers, scores your clarity and depth,
+          then turns every response into focused feedback you can actually use.
         </p>
-        <div class="hero-actions">
-          <button class="btn btn--dark btn--lg" id="btn-start-hero" disabled>
-            Begin interview →
+
+        <div class="guide-grid">
+          <button class="guide-pill" id="btn-start-hero" disabled>
+            Begin interview &rarr;
           </button>
-          <button class="btn btn--outline btn--lg" onclick="document.querySelector('.config-section').scrollIntoView({behavior:'smooth'})">
+          <button class="guide-pill" onclick="document.querySelector('.config-section').scrollIntoView({behavior:'smooth'})">
             Configure
           </button>
+          <button class="guide-pill" onclick="document.querySelector('.config-section').scrollIntoView({behavior:'smooth'})">
+            Select Domain
+          </button>
+          <a class="guide-pill" href="/api/sessions" target="_blank">
+            Interview History
+          </a>
+          <button class="guide-pill" onclick="document.querySelector('.features-strip').scrollIntoView({behavior:'smooth'})">
+            Voice Feedback
+          </button>
         </div>
       </div>
-
-      <div class="hero-right">
-        <div class="hero-card">
-          <div class="hero-card__status">
-            <span class="status-dot status-dot--green"></span>
-            Ready to listen
-          </div>
-          <div class="hero-card__quote">
-            "Speak your answer out loud — I'll evaluate your clarity,
-            depth, and accuracy. No judgment, just honest feedback."
-          </div>
-          <div class="hero-card__tags">
-            <span class="tag">Python</span>
-            <span class="tag">System Design</span>
-            <span class="tag">HR</span>
-            <span class="tag">ML</span>
-            <span class="tag tag--dark">Private</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    </section>
 
     <!-- Config -->
     <div class="config-section">
       <div class="config-section__sep"></div>
-
-      <!-- Provider -->
-      <p class="section-h">AI Provider</p>
-      <div class="provider-grid">
-        <button class="provider-card active" id="card-groq" data-provider="groq">
-          <div class="provider-card__top">
-            <div class="provider-card__icon">⚡</div>
-            <span class="provider-card__name">Groq</span>
-            <span class="tag" id="groq-tag">Checking…</span>
-          </div>
-          <div class="provider-card__model" id="groq-model">llama-3.3-70b-versatile</div>
-          <div class="provider-card__desc">Cloud · Ultra-fast · Free tier</div>
-        </button>
-
-        <button class="provider-card" id="card-ollama" data-provider="ollama">
-          <div class="provider-card__top">
-            <div class="provider-card__icon">🦙</div>
-            <span class="provider-card__name">Ollama</span>
-            <span class="tag" id="ollama-tag">Checking…</span>
-          </div>
-          <div class="provider-card__model" id="ollama-model">llama3</div>
-          <div class="provider-card__desc">Local · 100% private · No API key</div>
-        </button>
-      </div>
 
       <!-- Alert -->
       <div class="alert alert--warn" id="provider-alert" style="display:none; margin-bottom:1.25rem;">
@@ -131,11 +99,6 @@
             <div class="stepper__val" id="q-count">7</div>
             <button class="stepper__btn" id="q-plus">+</button>
           </div>
-        </div>
-        <div class="config-bar__sep"></div>
-        <div class="config-bar__item">
-          <div class="config-bar__label">Provider</div>
-          <span class="tag tag--dark" id="active-provider-tag">Groq ⚡</span>
         </div>
         <div class="config-bar__sep"></div>
         <div class="config-bar__item">
